@@ -1,0 +1,19 @@
+{
+  "icon": "docker.svg",
+  "vm": {
+    "composefile": "docker-compose.yaml",
+    "exposes": {
+      "socket": "extension-expose-containers.sock"
+    }
+  },
+  "ui": {
+    "dashboard-tab": {
+      "title": "Expose Containers",
+      "src": "index.html",
+      "root": "ui",
+      "backend": {
+        "socket": "extension-expose-containers.sock"
+      }
+    }
+  }
+}
