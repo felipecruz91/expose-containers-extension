@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import { createDockerDesktopClient } from "@docker/extension-api-client";
 import { Stack, TextField, Typography, Button } from "@mui/material";
 
-// Container
 export interface Container {
   Names: string[];
   Ports: Port[];
@@ -22,7 +21,7 @@ function useDockerDesktopClient() {
 }
 
 export function App() {
-  const [containers, setContainers] = useState<Container[]>();
+  const [containers, setContainers] = useState<Container[]>([]);
   const [authToken, setAuthToken] = useState<string>("");
   const [url, setUrl] = useState<string>("-");
   const ddClient = useDockerDesktopClient();
@@ -68,9 +67,18 @@ export function App() {
   const listContainers = () => {
     ddClient.docker
       .listContainers()
-      .then((value: Container[]) => {
-        console.log(value);
-        setContainers(value);
+      .then((containers: Container[]) => {
+        let containersExposingPorts = [];
+
+        for (let index = 0; index < containers.length; index++) {
+          const container = containers[index];
+          if (container.Ports.length > 0) {
+            containersExposingPorts.push(container);
+          }
+        }
+
+        console.log(containersExposingPorts);
+        setContainers(containersExposingPorts);
       })
       .catch((err: Error) => {
         console.log(err);
@@ -106,7 +114,9 @@ export function App() {
     return (
       <tr key="headers">
         {["Container", "Published ports", "URL"].map((h) => (
-          <td key={h}>{h}</td>
+          <td key={h} width="250px">
+            {h}
+          </td>
         ))}
       </tr>
     );
@@ -116,49 +126,64 @@ export function App() {
   // by running an ngrok container that targets the app's container port:
   // e.g. "docker run -e NGROK_AUTHTOKEN=***** --net=host ngrok/ngrok http 8080 --log stdout --log-format json"
   const exposeHandle = async (port: number) => {
-    const containerName = `ngrok-${port}`;
+    try {
+      const containerName = `ngrok-${port}`;
 
-    await ddClient.docker.cli.exec("run", [
-      `--name=${containerName}`,
-      "-e",
-      `NGROK_AUTHTOKEN=${authToken}`,
-      "--net=host",
-      "-d",
-      "ngrok/ngrok",
-      "http",
-      port.toString(),
-      "--log=stdout",
-      "--log-format=json",
-    ]);
-
-    const interval = setInterval(async () => {
-      const logsOutput = await ddClient.docker.cli.exec("logs", [
-        containerName,
+      await ddClient.docker.cli.exec("run", [
+        `--name=${containerName}`,
+        "-e",
+        `NGROK_AUTHTOKEN=${authToken}`,
+        "--net=host",
+        "-d",
+        "ngrok/ngrok",
+        "http",
+        `${port}`,
+        "--log=stdout",
+        "--log-format=json",
       ]);
-      console.log(logsOutput);
-      // Example of logs output:
-      // {"err":"\u003cnil\u003e","lvl":"info","msg":"open config file","path":"/var/lib/ngrok/ngrok.yml","t":"2022-06-07T11:05:40.822626057Z"}
-      // {"addr":"0.0.0.0:4040","lvl":"info","msg":"starting web service","obj":"web","t":"2022-06-07T11:05:40.824277919Z"}
-      // {"lvl":"info","msg":"tunnel session started","obj":"tunnels.session","t":"2022-06-07T11:05:41.025380757Z"}
-      // {"id":"6da982f374ef","lvl":"info","msg":"client session established","obj":"csess","t":"2022-06-07T11:05:41.025537956Z"}
-      // {"addr":"http://localhost:8080","lvl":"info","msg":"started tunnel","name":"command_line","obj":"tunnels","t":"2022-06-07T11:05:41.083489579Z","url":"https://f6fb-79-144-242-50.eu.ngrok.io"}
-      // {"lvl":"info","msg":"update available","obj":"updater","t":"2022-06-07T11:05:41.307409645Z"}
-      // {"id":"0d3c688ff241","l":"127.0.0.1:8080","lvl":"info","msg":"join connections","obj":"join","r":"79.144.242.50:53473","t":"2022-06-07T11:05:51.914187991Z"}
-      // {"lvl":"info","msg":"received stop request","obj":"app","stopReq":{},"t":"2022-06-07T11:05:55.301981768Z"}
-      // {"err":"\u003cnil\u003e","lvl":"info","msg":"session closing","obj":"tunnels.session","t":"2022-06-07T11:05:55.302378322Z"}
 
-      const lines = logsOutput.parseJsonLines();
+      const interval = setInterval(async () => {
+        const logsOutput = await ddClient.docker.cli.exec("logs", [
+          containerName,
+        ]);
+        console.log(logsOutput);
 
-      for (let index = 0; index < lines.length; index++) {
-        const line = lines[index];
+        // Example of logs output:
+        // {"err":"\u003cnil\u003e","lvl":"info","msg":"open config file","path":"/var/lib/ngrok/ngrok.yml","t":"2022-06-07T11:05:40.822626057Z"}
+        // {"addr":"0.0.0.0:4040","lvl":"info","msg":"starting web service","obj":"web","t":"2022-06-07T11:05:40.824277919Z"}
+        // {"lvl":"info","msg":"tunnel session started","obj":"tunnels.session","t":"2022-06-07T11:05:41.025380757Z"}
+        // {"id":"6da982f374ef","lvl":"info","msg":"client session established","obj":"csess","t":"2022-06-07T11:05:41.025537956Z"}
+        // {"addr":"http://localhost:8080","lvl":"info","msg":"started tunnel","name":"command_line","obj":"tunnels","t":"2022-06-07T11:05:41.083489579Z","url":"https://f6fb-79-144-242-50.eu.ngrok.io"}
+        // {"lvl":"info","msg":"update available","obj":"updater","t":"2022-06-07T11:05:41.307409645Z"}
+        // {"id":"0d3c688ff241","l":"127.0.0.1:8080","lvl":"info","msg":"join connections","obj":"join","r":"79.144.242.50:53473","t":"2022-06-07T11:05:51.914187991Z"}
+        // {"lvl":"info","msg":"received stop request","obj":"app","stopReq":{},"t":"2022-06-07T11:05:55.301981768Z"}
+        // {"err":"\u003cnil\u003e","lvl":"info","msg":"session closing","obj":"tunnels.session","t":"2022-06-07T11:05:55.302378322Z"}
 
-        if (line.msg === "started tunnel") {
-          console.log("URL: ", line.url);
-          setUrl(line.url);
+        if (logsOutput.stderr) {
+          ddClient.desktopUI.toast.error(
+            `Failed to start tunnel: ${logsOutput.stderr}`
+          );
           clearInterval(interval);
         }
-      }
-    }, 1000);
+
+        const lines = logsOutput.parseJsonLines();
+
+        for (let index = 0; index < lines.length; index++) {
+          const line = lines[index];
+
+          if (line.msg === "started tunnel") {
+            console.log("URL: ", line.url);
+            setUrl(line.url);
+            ddClient.desktopUI.toast.success(
+              `Container ${containerName} exposed at ${line.url}`
+            );
+            clearInterval(interval);
+          }
+        }
+      }, 1000);
+    } catch (e: any) {
+      ddClient.desktopUI.toast.error(`Failed to start tunnel: ${e.stderr}`);
+    }
   };
 
   const PrintTableRows = () => {
@@ -203,12 +228,10 @@ export function App() {
 
   return (
     <>
-      <Typography variant="h3">Docker extension demo</Typography>
+      <Typography variant="h3">Expose containers</Typography>
       <Typography variant="body1" color="text.secondary" sx={{ mt: 2 }}>
-        This is a basic page rendered with MUI, using Docker's theme. Read the
-        MUI documentation to learn more. Using MUI in a conventional way and
-        avoiding custom styling will help make sure your extension continues to
-        look great as Docker's theme evolves.
+        This is a sample extension to make your containers accessible from the
+        public internet using Ngrok.
       </Typography>
       <Stack direction="column" alignItems="start" spacing={2} sx={{ mt: 4 }}>
         <TextField
@@ -221,14 +244,25 @@ export function App() {
           placeholder="Ngrok auth token"
         />
 
-        <div>
-          <table style={{ width: "100%" }}>
-            <thead>
-              {PrintTableHeaders()}
-              {PrintTableRows()}
-            </thead>
-          </table>
-        </div>
+        {containers.length > 0 ? (
+          <div>
+            <table style={{ width: "100%" }}>
+              <thead>
+                {PrintTableHeaders()}
+                {PrintTableRows()}
+              </thead>
+            </table>
+          </div>
+        ) : (
+          <>
+            <Typography variant="body1" color="text.secondary" sx={{ mt: 2 }}>
+              There are no running containers exposing ports.
+            </Typography>
+            <Typography variant="body1" color="text.secondary" sx={{ mt: 2 }}>
+              Run one with "docker run --rm -p 8080:80 nginx"
+            </Typography>
+          </>
+        )}
       </Stack>
     </>
   );
