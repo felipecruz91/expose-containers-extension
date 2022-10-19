@@ -23,7 +23,7 @@ function useDockerDesktopClient() {
 
 export function App() {
   const [containers, setContainers] = useState<Container[]>();
-  const [authToken, setAuthToken] = useState<string>();
+  const [authToken, setAuthToken] = useState<string>("");
   const [url, setUrl] = useState<string>("-");
   const ddClient = useDockerDesktopClient();
 
@@ -116,8 +116,10 @@ export function App() {
   // by running an ngrok container that targets the app's container port:
   // e.g. "docker run -e NGROK_AUTHTOKEN=***** --net=host ngrok/ngrok http 8080 --log stdout --log-format json"
   const exposeHandle = async (port: number) => {
+    const containerName = `ngrok-${port}`;
+
     await ddClient.docker.cli.exec("run", [
-      "--name=foo",
+      `--name=${containerName}`,
       "-e",
       `NGROK_AUTHTOKEN=${authToken}`,
       "--net=host",
@@ -130,8 +132,20 @@ export function App() {
     ]);
 
     const interval = setInterval(async () => {
-      const logsOutput = await ddClient.docker.cli.exec("logs", ["foo"]);
+      const logsOutput = await ddClient.docker.cli.exec("logs", [
+        containerName,
+      ]);
       console.log(logsOutput);
+      // Example of logs output:
+      // {"err":"\u003cnil\u003e","lvl":"info","msg":"open config file","path":"/var/lib/ngrok/ngrok.yml","t":"2022-06-07T11:05:40.822626057Z"}
+      // {"addr":"0.0.0.0:4040","lvl":"info","msg":"starting web service","obj":"web","t":"2022-06-07T11:05:40.824277919Z"}
+      // {"lvl":"info","msg":"tunnel session started","obj":"tunnels.session","t":"2022-06-07T11:05:41.025380757Z"}
+      // {"id":"6da982f374ef","lvl":"info","msg":"client session established","obj":"csess","t":"2022-06-07T11:05:41.025537956Z"}
+      // {"addr":"http://localhost:8080","lvl":"info","msg":"started tunnel","name":"command_line","obj":"tunnels","t":"2022-06-07T11:05:41.083489579Z","url":"https://f6fb-79-144-242-50.eu.ngrok.io"}
+      // {"lvl":"info","msg":"update available","obj":"updater","t":"2022-06-07T11:05:41.307409645Z"}
+      // {"id":"0d3c688ff241","l":"127.0.0.1:8080","lvl":"info","msg":"join connections","obj":"join","r":"79.144.242.50:53473","t":"2022-06-07T11:05:51.914187991Z"}
+      // {"lvl":"info","msg":"received stop request","obj":"app","stopReq":{},"t":"2022-06-07T11:05:55.301981768Z"}
+      // {"err":"\u003cnil\u003e","lvl":"info","msg":"session closing","obj":"tunnels.session","t":"2022-06-07T11:05:55.302378322Z"}
 
       const lines = logsOutput.parseJsonLines();
 
@@ -171,7 +185,7 @@ export function App() {
                 <pre>{url}</pre>
               </td>
 
-              {url === "-" && (
+              {authToken !== "" && url === "-" && (
                 <Button
                   variant="contained"
                   onClick={async () =>
@@ -196,21 +210,15 @@ export function App() {
         avoiding custom styling will help make sure your extension continues to
         look great as Docker's theme evolves.
       </Typography>
-      <Typography variant="body1" color="text.secondary" sx={{ mt: 2 }}>
-        Pressing the below button will trigger a request to the backend. Its
-        response will appear in the textarea.
-      </Typography>
       <Stack direction="column" alignItems="start" spacing={2} sx={{ mt: 4 }}>
-        <Typography variant="body1" color="text.secondary" sx={{ mt: 2 }}>
-          The ngrok auth token is not stored.
-        </Typography>
         <TextField
           sx={{ width: 480 }}
           variant="outlined"
-          // type="password"
+          type="password"
           minRows={5}
           onChange={handleAuthTokenChange}
           value={authToken}
+          placeholder="Ngrok auth token"
         />
 
         <div>
