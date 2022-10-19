@@ -84,10 +84,6 @@ export function App() {
       });
   };
 
-  // const handleAuthTokenChange = (event) => {
-  //   setAuthToken(event.target.value);
-  // };
-
   const DisplayContainerPorts = (container: Container) => {
     let publishedPorts: string[] = [];
 
@@ -109,6 +105,60 @@ export function App() {
     );
   };
 
+  // Make the container accessible from the internet
+  // by running an ngrok container that targets the app's container port:
+  // e.g. "docker run -e NGROK_AUTHTOKEN=***** --net=host ngrok/ngrok http 8080 --log stdout --log-format json"
+  const exposeHandle = async (port: number) => {
+    const runOutput = await ddClient.docker.cli.exec("run", [
+      "-e",
+      `NGROK_AUTHTOKEN=${authToken}`,
+      "--net=host",
+      "-d",
+      "ngrok/ngrok",
+      "http",
+      `${port}`,
+      "--log=stdout",
+      "--log-format=json",
+    ]);
+
+    const containerId = runOutput.stdout.trimEnd();
+
+    await ddClient.docker.cli.exec("logs", ["-f", containerId], {
+      stream: {
+        onOutput(data) {
+          if (data.stdout) {
+            console.log(data.stdout);
+
+            // {"err":"\u003cnil\u003e","lvl":"info","msg":"open config file","path":"/var/lib/ngrok/ngrok.yml","t":"2022-06-07T11:05:40.822626057Z"}
+            // {"addr":"0.0.0.0:4040","lvl":"info","msg":"starting web service","obj":"web","t":"2022-06-07T11:05:40.824277919Z"}
+            // {"lvl":"info","msg":"tunnel session started","obj":"tunnels.session","t":"2022-06-07T11:05:41.025380757Z"}
+            // {"id":"6da982f374ef","lvl":"info","msg":"client session established","obj":"csess","t":"2022-06-07T11:05:41.025537956Z"}
+            // {"addr":"http://localhost:8080","lvl":"info","msg":"started tunnel","name":"command_line","obj":"tunnels","t":"2022-06-07T11:05:41.083489579Z","url":"https://f6fb-79-144-242-50.eu.ngrok.io"}
+            // {"lvl":"info","msg":"update available","obj":"updater","t":"2022-06-07T11:05:41.307409645Z"}
+            // {"id":"0d3c688ff241","l":"127.0.0.1:8080","lvl":"info","msg":"join connections","obj":"join","r":"79.144.242.50:53473","t":"2022-06-07T11:05:51.914187991Z"}
+            // ^C{"lvl":"info","msg":"received stop request","obj":"app","stopReq":{},"t":"2022-06-07T11:05:55.301981768Z"}
+            // {"err":"\u003cnil\u003e","lvl":"info","msg":"session closing","obj":"tunnels.session","t":"2022-06-07T11:05:55.302378322Z"}
+
+            const stdOutJSON = JSON.parse(data.stdout);
+            if (stdOutJSON.msg === "started tunnel") {
+              setUrl(stdOutJSON.url);
+            }
+          } else {
+            console.error(data.stderr);
+          }
+        },
+        onError(error) {
+          console.error(error);
+        },
+        onClose(exitCode) {
+          console.log("onClose with exit code " + exitCode);
+        },
+        // If set to true, `onOutput` will be invoked once for each line.
+        splitOutputLines: true,
+      },
+    });
+  };
+
   const PrintTableHeaders = () => {
     return (
       <tr key="headers">
@@ -121,120 +171,41 @@ export function App() {
     );
   };
 
-  // Make the container accessible from the internet
-  // by running an ngrok container that targets the app's container port:
-  // e.g. "docker run -e NGROK_AUTHTOKEN=***** --net=host ngrok/ngrok http 8080 --log stdout --log-format json"
-  const exposeHandle = async (port: number) => {
-    try {
-      const containerName = `ngrok-${port}`;
-
-      await ddClient.docker.cli.exec("run", [
-        `--name=${containerName}`,
-        "-e",
-        `NGROK_AUTHTOKEN=${authToken}`,
-        "--net=host",
-        "-d",
-        "ngrok/ngrok",
-        "http",
-        `${port}`,
-        "--log=stdout",
-        "--log-format=json",
-      ]);
-
-      const interval = setInterval(async () => {
-        const logsOutput = await ddClient.docker.cli.exec("logs", [
-          containerName,
-        ]);
-        console.log(logsOutput);
-
-        // Example of logs output:
-        // {"err":"\u003cnil\u003e","lvl":"info","msg":"open config file","path":"/var/lib/ngrok/ngrok.yml","t":"2022-06-07T11:05:40.822626057Z"}
-        // {"addr":"0.0.0.0:4040","lvl":"info","msg":"starting web service","obj":"web","t":"2022-06-07T11:05:40.824277919Z"}
-        // {"lvl":"info","msg":"tunnel session started","obj":"tunnels.session","t":"2022-06-07T11:05:41.025380757Z"}
-        // {"id":"6da982f374ef","lvl":"info","msg":"client session established","obj":"csess","t":"2022-06-07T11:05:41.025537956Z"}
-        // {"addr":"http://localhost:8080","lvl":"info","msg":"started tunnel","name":"command_line","obj":"tunnels","t":"2022-06-07T11:05:41.083489579Z","url":"https://f6fb-79-144-242-50.eu.ngrok.io"}
-        // {"lvl":"info","msg":"update available","obj":"updater","t":"2022-06-07T11:05:41.307409645Z"}
-        // {"id":"0d3c688ff241","l":"127.0.0.1:8080","lvl":"info","msg":"join connections","obj":"join","r":"79.144.242.50:53473","t":"2022-06-07T11:05:51.914187991Z"}
-        // {"lvl":"info","msg":"received stop request","obj":"app","stopReq":{},"t":"2022-06-07T11:05:55.301981768Z"}
-        // {"err":"\u003cnil\u003e","lvl":"info","msg":"session closing","obj":"tunnels.session","t":"2022-06-07T11:05:55.302378322Z"}
-
-        if (logsOutput.stderr) {
-          ddClient.desktopUI.toast.error(
-            `Failed to start tunnel: ${logsOutput.stderr}`
-          );
-          clearInterval(interval);
-        }
-
-        const lines = logsOutput.parseJsonLines();
-
-        for (let index = 0; index < lines.length; index++) {
-          const line = lines[index];
-
-          if (line.msg === "started tunnel") {
-            console.log("URL: ", line.url);
-            setUrl(line.url);
-            ddClient.desktopUI.toast.success(
-              `Container ${containerName} exposed at ${line.url}`
-            );
-            clearInterval(interval);
-          }
-        }
-      }, 1000);
-    } catch (e: any) {
-      ddClient.desktopUI.toast.error(`Failed to start tunnel: ${e.stderr}`);
-    }
-  };
-
   const PrintTableRows = () => {
-    if (containers === undefined) {
-      return;
-    }
+    return containers.map((container) => (
+      <tr key={"ctr-row-" + container.Names[0]}>
+        <td key={"ctr-name-" + container.Names[0]}>
+          {container.Names[0].substring(1)}
+        </td>
 
-    return (
-      containers &&
-      containers
-        .filter(
-          (c: Container) => c.Ports.filter((p) => p.PublicPort).length > 0
-        ) // only display containers that expose ports
-        .map((container) => (
-          <React.Fragment>
-            <tr key={"ctr-row-" + container.Names[0]}>
-              <td key={"ctr-name-" + container.Names[0]}>
-                {container.Names[0].substring(1)}
-              </td>
+        {DisplayContainerPorts(container)}
 
-              {DisplayContainerPorts(container)}
+        <td key={"urls-" + container.Names[0]}>
+          <pre>{url}</pre>
+        </td>
 
-              <td key={"urls-" + container.Names[0]}>
-                <pre>{url}</pre>
-              </td>
+        <td key="actions-">
+          {authToken !== "" && url === "-" && (
+            <Button
+              variant="contained"
+              onClick={async () => exposeHandle(container.Ports[0].PublicPort)} // TODO: if many, select the port to expose
+            >
+              Expose
+            </Button>
+          )}
 
-              <td key="actions-">
-                {authToken !== "" && url === "-" && (
-                  <Button
-                    variant="contained"
-                    onClick={async () =>
-                      exposeHandle(container.Ports[0].PublicPort)
-                    } // TODO: if many, select the port to expose
-                  >
-                    Expose
-                  </Button>
-                )}
-
-                {url !== "-" && (
-                  <Button
-                    sx={{ marginLeft: "20px" }}
-                    variant="contained"
-                    onClick={() => ddClient.host.openExternal(url)}
-                  >
-                    Open
-                  </Button>
-                )}
-              </td>
-            </tr>
-          </React.Fragment>
-        ))
-    );
+          {url !== "-" && (
+            <Button
+              sx={{ marginLeft: "20px" }}
+              variant="contained"
+              onClick={() => ddClient.host.openExternal(url)}
+            >
+              Open
+            </Button>
+          )}
+        </td>
+      </tr>
+    ));
   };
 
   return (
