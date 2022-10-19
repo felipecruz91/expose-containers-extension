@@ -26,7 +26,7 @@ export function App() {
   const [url, setUrl] = useState<string>("-");
   const ddClient = useDockerDesktopClient();
 
-  // List containers when entering the extension
+  // List containers when the component is mount (i.e. when entering the extension)
   useEffect(() => {
     listContainers();
   }, []);
@@ -77,17 +77,16 @@ export function App() {
           }
         }
 
-        console.log(containersExposingPorts);
         setContainers(containersExposingPorts);
       })
       .catch((err: Error) => {
-        console.log(err);
+        ddClient.desktopUI.toast.error(`Failed to list containers: ${err}`);
       });
   };
 
-  const handleAuthTokenChange = (event) => {
-    setAuthToken(event.target.value);
-  };
+  // const handleAuthTokenChange = (event) => {
+  //   setAuthToken(event.target.value);
+  // };
 
   const DisplayContainerPorts = (container: Container) => {
     let publishedPorts: string[] = [];
@@ -210,16 +209,28 @@ export function App() {
                 <pre>{url}</pre>
               </td>
 
-              {authToken !== "" && url === "-" && (
-                <Button
-                  variant="contained"
-                  onClick={async () =>
-                    exposeHandle(container.Ports[0].PublicPort)
-                  } // TODO: if many, select the port to expose
-                >
-                  Expose
-                </Button>
-              )}
+              <td key="actions-">
+                {authToken !== "" && url === "-" && (
+                  <Button
+                    variant="contained"
+                    onClick={async () =>
+                      exposeHandle(container.Ports[0].PublicPort)
+                    } // TODO: if many, select the port to expose
+                  >
+                    Expose
+                  </Button>
+                )}
+
+                {url !== "-" && (
+                  <Button
+                    sx={{ marginLeft: "20px" }}
+                    variant="contained"
+                    onClick={() => ddClient.host.openExternal(url)}
+                  >
+                    Open
+                  </Button>
+                )}
+              </td>
             </tr>
           </React.Fragment>
         ))
@@ -233,13 +244,19 @@ export function App() {
         This is a sample extension to make your containers accessible from the
         public internet using Ngrok.
       </Typography>
+      <Typography variant="body1" color="text.secondary" sx={{ mt: 2 }}>
+        Host: {ddClient.host.hostname} ({ddClient.host.platform}/
+        {ddClient.host.arch})
+      </Typography>
       <Stack direction="column" alignItems="start" spacing={2} sx={{ mt: 4 }}>
         <TextField
-          sx={{ width: 480 }}
+          sx={{ width: 300 }}
           variant="outlined"
           type="password"
           minRows={5}
-          onChange={handleAuthTokenChange}
+          onChange={(event) => {
+            setAuthToken(event.target.value);
+          }}
           value={authToken}
           placeholder="Ngrok auth token"
         />
@@ -256,7 +273,7 @@ export function App() {
         ) : (
           <>
             <Typography variant="body1" color="text.secondary" sx={{ mt: 2 }}>
-              There are no running containers exposing ports.
+              There are no running containers publishing ports (-p flag).
             </Typography>
             <Typography variant="body1" color="text.secondary" sx={{ mt: 2 }}>
               Run one with "docker run --rm -p 8080:80 nginx"
